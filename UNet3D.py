@@ -44,7 +44,8 @@ class Unet_3D(object):
         self.loss_function = loss_function
         self.num_filters_list = num_filters_list
         self.BatchNormalisation = BatchNormalisation
-        self.include_label_wise_dice_coefficients = include_label_wise_dice_coefficients
+        self.include_label_wise_dice_coefficients = include_label_wise_dice_coefficients #Measure the loss for 
+                                                                                         #each individual class.
 
         print("Initialised with {}x{}x{}x{} patch volume".format(patch_x, patch_y, patch_z, num_channels))
         print("Number of labels: {}".format(num_labels))
@@ -58,6 +59,7 @@ class Unet_3D(object):
     def network_architecture(self,pool_size=(2, 2, 2), deconvolution=True, activation_name="sigmoid", 
                              initial_learning_rate=0.00001,loss_function = 'categorical_crossentropy',
                              metrics=weighted_dice_coefficient_loss):
+        #Define inputs and initiate input and parameters:
         input_shape = (self.patch_x, self.patch_y, self.patch_z, self.num_channels)
         n_labels = self.num_labels
         inputs = Input(input_shape)
@@ -67,8 +69,10 @@ class Unet_3D(object):
         num_filters_list = self.num_filters_list
         filter_index = 0
         depth = len(num_filters_list) - 1
+        #Obtain loss function - this will need a better implementation to read string variables:
         if self.loss_function:
             loss_function = self.loss_function
+        #Loop through all the levels of U-Net in the contractile path
         for layer_depth in range(depth):
             layer1 = self.convolution_block(input_layer=current_layer, n_filters=num_filters_list[filter_index], 
                                             batch_normalisation=self.BatchNormalisation)
@@ -82,7 +86,8 @@ class Unet_3D(object):
                 current_layer = layer2
                 levels.append([layer1, layer2])
             print("U-net down step {} output shape:".format(layer_depth), current_layer.shape)
-                
+        #Go back up through the levels in the extension path, with concatenation of the level outputs from
+        #the contractile path
         for layer_depth in range(depth-2, -1, -1):
             up_convolution = self.get_up_convolution(pool_size=pool_size, deconvolution=deconvolution,
                                                 n_filters=current_layer._keras_shape[4])(current_layer)
@@ -93,11 +98,15 @@ class Unet_3D(object):
                                                      input_layer=current_layer,
                                                      batch_normalisation=self.BatchNormalisation)
             print("U-net up step {} output shape:".format(layer_depth), current_layer.shape)
-            
+        
+        #Output final convolution and activation
         final_convolution = Conv3D(self.num_labels, (1, 1, 1))(current_layer)
         act = Activation(activation_name)(final_convolution)
+        #Print shape
         print("U-net output shape: ", act.shape)
+        #initiate model
         model = Model(inputs=inputs, outputs=act)
+        #Initate performance metrics (to be observed by the user; these metrics are not minimised by the network:
         if not isinstance(metrics, list):
             metrics = [metrics]
         if self.include_label_wise_dice_coefficients and n_labels > 1:
@@ -106,16 +115,16 @@ class Unet_3D(object):
                 metrics = metrics + label_wise_dice_metrics 
             else:
                 metrics = label_wise_dice_metrics
-                
+        #Compile model:        
         model.compile(optimizer=Adam(lr=initial_learning_rate), loss=loss_function, metrics=metrics)
         return model
         
-    
+    #For scheduled step decay:
     def step_decay(self,epoch, initial_lrate, drop, epochs_drop):
         return initial_lrate * math.pow(drop, math.floor((1+epoch)/float(epochs_drop)))
     
     
-    ##Call backs ########################################################
+    ##Call backs ########################################### Verbose monitoring of loss as well as loss function plotting
     
     def get_callbacks(self, model_file, initial_learning_rate=0.0001, learning_rate_drop=0.5, learning_rate_epochs=None,
                   learning_rate_patience=50, logging_file="./out_logs/training.log", verbosity=1,
@@ -159,6 +168,7 @@ class Unet_3D(object):
             layer = BatchNormalization()(layer)
         
         return layer
+    ##Up convolution###################################################
     
     def get_up_convolution(self,n_filters, pool_size, kernel_size=(2, 2, 2), strides=(2, 2, 2),
                        deconvolution=False):
@@ -168,7 +178,8 @@ class Unet_3D(object):
         else:
             return UpSampling3D(size=pool_size)
     
-#'''    
+#''' 
+    #Data generator object, which generates input data for the network (to use with fit generator during training:
     def data_generator(self, input_data, output_data, n_labels=1,
                        n_channels =1, batch_size=1, n_per_sample = 1, remove_bkg = False, uniform=True):
         print('Fitting model...')
@@ -196,7 +207,7 @@ class Unet_3D(object):
                     input_patches = list()
                     output_patches = list()
             
-            
+    #Create patch:        
     def get_patch(self,img,lbl,patch_index,input_patches,output_patches):
         # build_patch
         input_patches.append(img[patch_index[0]:patch_index[0] + self.patch_x,
@@ -207,7 +218,7 @@ class Unet_3D(object):
                                   patch_index[1]:patch_index[1] + self.patch_y,
                                   patch_index[2]:patch_index[2] + self.patch_z])
         
-    
+    #Change patch selection - Needs more elegant implementing:
     def random_normalise(self,maxi=None,mini=0):
         x = np.arange(mini, maxi)
         if not maxi: maxi = 1
@@ -221,7 +232,8 @@ class Unet_3D(object):
             
 
 
-#'''   
+#'''
+    #Convert list of patches to numpy arrays of patches:
     def convert_data(self,x_list, y_list, n_labels=1, labels=None, remove_bkg = False):
         #print(len(y_list))
         #print(y_list[0].shape)
@@ -235,6 +247,7 @@ class Unet_3D(object):
         #'''
         return x,y
     
+    #Number_of_samples/ Batch_size:
     def get_number_of_steps(self,n_samples, batch_size):
         if n_samples <= batch_size:
             return n_samples
@@ -258,21 +271,25 @@ class Unet_3D(object):
               early_stopping_patience=None, learning_rate_epochs=None, learning_rate_drop=0.5, 
               min_delta = 0.05, min_lr = 1e-8, remove_bkg = False, restore_best_weights=False, 
               cooldown=0, n_per_sample = 1, uniform=True):
-        
+        #Obtain training input generator 
         training_generator = self.data_generator(x_train, y_train, n_labels=self.num_labels, 
                                                  batch_size=batch_size, remove_bkg = remove_bkg,
                                                  uniform=uniform,n_per_sample =n_per_sample)
+        #Obtain validation input generator (needs to be changed into optional input):
         validation_generator = self.data_generator(x_val, y_val, n_labels=self.num_labels, 
                                                    batch_size=batch_size, remove_bkg = remove_bkg,
                                                    uniform=uniform,n_per_sample =n_per_sample)
+        #Instantiate network architecture:
         print("Defining network architecture...")
         if pretrained_model is None:
             model = self.network_architecture(initial_learning_rate=initial_learning_rate)
         else:
             model = pretrained_model
+        #Obtain all training variables:
         training_steps = self.get_number_of_steps(len(x_train),batch_size)
         validation_steps = self.get_number_of_steps(len(x_val),batch_size)
         model_file = os.path.join(self.model_dir,self.model_file)
+        #Train: 
         model.fit_generator(generator=training_generator,
                         steps_per_epoch=training_steps,
                         epochs=n_epochs,
@@ -295,7 +312,7 @@ class Unet_3D(object):
     
     
     
-    
+    # Load existing models (this needs to verified and reworked):
     def load_old_model(self,model_file):
         print("Loading pre-trained model")
         custom_objects = {'dice_coefficient_loss': dice_coefficient_loss, 'dice_coefficient': dice_coefficient,
@@ -321,7 +338,9 @@ class Unet_3D(object):
 
     
 ##Testing############################################################
-                
+
+    #Inference step, based on patch-wise inference:
+    #More elegant implementation pending:            
     def test(self, model, input_test):
         """ The network is trained on patches and so at test time we have to
         split our test volume up into patches, and then apply the network to
