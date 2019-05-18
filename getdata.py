@@ -62,6 +62,7 @@ def preprocess_MR(X):
 #'''
  
 #'''
+#Pad images with zero if they are too small for input:
 def padding(img, num_dimensions_x = None, num_dimensions_y = None, 
               num_dimensions_z = None):
     x_len = img.shape[0]
@@ -110,7 +111,7 @@ def padding(img, num_dimensions_x = None, num_dimensions_y = None,
 #'''
 
 
-
+#Load all data and obtain the training, validation and testing sets:
 def load_data(T2_data, label_data,train_test_split,validation_split, num_channels=1,
               augment=False, augment_factor=None, min_dim = (32,32,32)):
     subject_ids = [f for f in os.listdir(T2_data) if os.path.isfile(os.path.join(T2_data, f))]
@@ -177,7 +178,7 @@ def load_data(T2_data, label_data,train_test_split,validation_split, num_channel
 
     return input_training, output_training, input_val, output_val, input_test,output_test, subj_train_list, subj_val_list, subj_test_list
     
-
+# Check image dimensions:
 def check_dim(img, lbl, dim, scale = 1.2):
     if img.shape[0] < scale*dim[0]:
         img = padding(img,num_dimensions_x = scale*dim[0])
@@ -190,6 +191,7 @@ def check_dim(img, lbl, dim, scale = 1.2):
         lbl = padding(lbl,num_dimensions_z = scale*dim[2])
     return img, lbl
 
+#Get array of random choice of True and false and avoid two falses:
 def get_R_S():
     R_S = [random.choice([True, False]),random.choice([True, False])]
     if not R_S[0] and not R_S[1]:
