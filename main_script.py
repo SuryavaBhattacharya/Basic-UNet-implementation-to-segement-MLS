@@ -43,7 +43,7 @@ network_params = {'patch_x': patches[0],
                       'num_labels': 3,
                       'loss_function':generalised_dice,
                       'model_file':\
-                      'dice_epochs2000_train99_resamp_c,rop_16x16x16patch_nopos_[32,64, 128, 256, 512, 1024]_myelin_only_aug_3.hdf5',
+                      'dice_epochs120_train99_resamp_c,rop_16x16x16patch_nopos_[32,64, 128, 256, 512, 1024]_myelin_only_aug_3.hdf5',
                       'model_dir': './Models',
                       'BatchNormalisation':True,
                       'include_label_wise_dice_coefficients':True,
